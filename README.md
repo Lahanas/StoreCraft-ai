@@ -1,114 +1,178 @@
-# StoreCraft – AI E-Commerce Platform
+# StoreCraft
 
-A full-stack e-commerce store with an AI shopping assistant.
+An e-commerce store with a built-in AI shopping assistant. Products are managed in Sanity, payments go through Stripe Checkout, and users sign in with Clerk. The assistant can search the catalog, recommend products and add items to your cart.
 
-**Stack:** Next.js 16 (App Router, Turbopack) · Sanity CMS · Stripe Checkout · Clerk · Vercel AI SDK · Tailwind CSS v4 · Zustand
+![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)
+![Sanity](https://img.shields.io/badge/Sanity-CMS-F03E2F?logo=sanity&logoColor=white)
+![Stripe](https://img.shields.io/badge/Stripe-Checkout-635BFF?logo=stripe&logoColor=white)
+![Clerk](https://img.shields.io/badge/Clerk-Auth-6C47FF?logo=clerk&logoColor=white)
+![Tailwind CSS](https://img.shields.io/badge/Tailwind-v4-06B6D4?logo=tailwindcss&logoColor=white)
 
 ## Features
 
-- **Catalog in Sanity CMS**: products, categories and orders, with an embedded Studio at `/studio`. A seed script loads **120 products** across 8 categories.
-- **Search, filter, sort and paginate** the catalog with GROQ queries (`/products`).
-- **Real-time cart**: Zustand store persisted to `localStorage` and synced live across open tabs; stock-aware quantity limits and a slide-out cart drawer.
-- **Stripe Checkout**: the server re-reads prices and stock from Sanity (the client only sends ids and quantities) and uses an idempotency key so double-clicks don't create duplicate sessions.
-- **Idempotent webhooks**: each paid Checkout Session becomes exactly one order. The order `_id` is derived from the session id and is created in the same atomic Sanity transaction as the stock decrements, so duplicate or concurrent deliveries can never double-count (see `src/app/api/webhooks/stripe/route.ts`).
-- **Clerk auth**: sign in/up, user menu, checkout and order history require a signed-in user (checked in each route).
-- **AI shopping assistant** (Vercel AI SDK tool calling, multi-step): `searchProducts`, `getProductDetails`, `getRecommendations`, `listCategories` and `addToCart`. Results render as product cards in the chat, and `addToCart` updates the real cart. The model is aware of the current cart contents, and the assistant is only available to users signed in with Clerk (email or OAuth such as Google/GitHub).
+**Storefront**
+- Product catalog with search, category filters, sorting and pagination
+- Product pages with stock status and related products
+- Cart drawer that keeps its contents after a reload and stays in sync across open tabs
+- Order history for signed-in users
+
+**Payments**
+- Stripe Checkout, with prices and stock checked on the server before a session is created
+- A webhook that records each paid order exactly once, even if Stripe sends the event more than once
+
+**Content**
+- Sanity Studio built into the app at `/studio`
+- A seed script that loads 120 products across 8 categories
+
+**AI assistant**
+- Built with the Vercel AI SDK using tool calling
+- Tools: search products, get product details, recommend similar items, list categories, add to cart
+- Results appear as product cards in the chat, and "add to cart" updates the real cart
+- Available to signed-in users only
+
+## Tech stack
+
+| Area | Technology |
+| --- | --- |
+| Framework | Next.js 16 (App Router), React 19, TypeScript |
+| Styling | Tailwind CSS v4 |
+| CMS | Sanity (embedded Studio, GROQ) |
+| Payments | Stripe Checkout and webhooks |
+| Auth | Clerk (email and OAuth) |
+| AI | Vercel AI SDK through the Vercel AI Gateway |
+| State | Zustand |
+| Validation | Zod |
+
+## How it works
+
+```mermaid
+flowchart LR
+    User((User)) --> App[Next.js app]
+    App -- products --> Sanity[(Sanity)]
+    App -- sign in --> Clerk
+    App -- checkout session --> Stripe
+    Stripe -- webhook --> Webhook["/api/webhooks/stripe"]
+    Webhook -- order + stock update --> Sanity
+    App -- chat --> Chat["/api/chat"]
+    Chat -- tool calls --> Sanity
+    Chat --> Gateway[AI Gateway]
+```
+
+**Checkout.** The browser sends only product ids and quantities. The server loads current prices and stock from Sanity, then creates the Stripe Checkout Session. An idempotency key stops a double-click from creating two sessions.
+
+**Webhooks.** Stripe can deliver the same event more than once. Each paid session maps to one order whose id is built from the session id (`order-<session id>`). The order and the stock decrements are written in a single Sanity transaction that fails if the order already exists. A repeated event therefore changes nothing, and the webhook still answers `200` so Stripe stops retrying.
+
+**Assistant.** `/api/chat` streams a response from the model with five tools defined in `src/lib/ai-tools.ts`. Every tool reads from Sanity, so the assistant can't invent products or prices. The current cart is sent with each message so the assistant knows what you already have.
+
+## Getting started
+
+### Prerequisites
+
+- Node.js 20.9 or newer
+- Accounts on [Sanity](https://www.sanity.io), [Clerk](https://clerk.com), [Stripe](https://stripe.com) and [Vercel](https://vercel.com) (for the AI Gateway). The free tiers are enough.
+- The [Stripe CLI](https://docs.stripe.com/stripe-cli) for testing webhooks locally
+
+### 1. Install
+
+```bash
+git clone https://github.com/Lahanas/StoreCraft-ai.git
+cd StoreCraft-ai
+npm install
+cp .env.example .env.local
+```
+
+### 2. Configure services
+
+**Sanity**
+1. Create a project at [sanity.io/manage](https://www.sanity.io/manage).
+2. Copy the project ID into `NEXT_PUBLIC_SANITY_PROJECT_ID`.
+3. Under API → Tokens, create a token with Editor access and set it as `SANITY_API_WRITE_TOKEN`.
+4. Under API → CORS origins, add `http://localhost:3000` with credentials allowed.
+
+**Clerk**
+1. Create an application in the [Clerk dashboard](https://dashboard.clerk.com).
+2. Copy the publishable and secret keys into `.env.local`.
+3. Optional: enable Google or GitHub under SSO connections.
+
+**Stripe**
+1. Copy your test-mode secret key into `STRIPE_SECRET_KEY`.
+2. In a separate terminal, run `npm run stripe:listen` and copy the `whsec_...` secret it prints into `STRIPE_WEBHOOK_SECRET`.
+
+**AI Gateway**
+1. Create an API key in the [Vercel AI Gateway](https://vercel.com/ai-gateway) and set it as `AI_GATEWAY_API_KEY`.
+2. Optional: change the model with `AI_MODEL` (default: `anthropic/claude-sonnet-5.5`).
+
+### 3. Seed and run
+
+```bash
+npm run seed   # loads 120 products (safe to run again)
+npm run dev
+```
+
+Open [localhost:3000](http://localhost:3000). The Studio is at [localhost:3000/studio](http://localhost:3000/studio).
+
+To test a payment, use card `4242 4242 4242 4242` with any future expiry date and any CVC.
+
+## Environment variables
+
+| Variable | Description |
+| --- | --- |
+| `NEXT_PUBLIC_SANITY_PROJECT_ID` | Sanity project ID |
+| `NEXT_PUBLIC_SANITY_DATASET` | Dataset name, usually `production` |
+| `NEXT_PUBLIC_SANITY_API_VERSION` | Sanity API version date |
+| `SANITY_API_WRITE_TOKEN` | Editor token used by the seed script and the webhook |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk publishable key |
+| `CLERK_SECRET_KEY` | Clerk secret key |
+| `STRIPE_SECRET_KEY` | Stripe secret key |
+| `STRIPE_WEBHOOK_SECRET` | Signing secret for the webhook endpoint |
+| `AI_GATEWAY_API_KEY` | Vercel AI Gateway key (not needed on Vercel) |
+| `AI_MODEL` | Model ID used by the assistant |
+| `NEXT_PUBLIC_SITE_URL` | Base URL used for Stripe redirects |
+
+## Scripts
+
+| Command | Description |
+| --- | --- |
+| `npm run dev` | Start the development server |
+| `npm run build` | Build for production |
+| `npm run start` | Run the production build |
+| `npm run lint` | Run ESLint |
+| `npm run typecheck` | Generate route types and run the TypeScript compiler |
+| `npm run seed` | Seed Sanity with products (`-- --count=200` for more) |
+| `npm run stripe:listen` | Forward Stripe webhooks to your local server |
 
 ## Project structure
 
 ```
 src/
-  app/
-    (store)/            storefront pages: home, products, product detail, orders, checkout success, sign-in/up
-    api/chat/           AI assistant endpoint (streamText + tools)
-    api/checkout/       creates Stripe Checkout Sessions
-    api/webhooks/stripe/  verifies signatures, writes orders idempotently
-    studio/             embedded Sanity Studio
-  components/           Header, CartDrawer, ChatWidget, ProductCard, …
-  lib/                  catalog queries, cart store, Stripe client, AI tools
-  sanity/               client, schema types, GROQ queries, image helper
-  proxy.ts              Clerk middleware (Next 16 calls middleware "proxy")
-scripts/seed.ts         seeds 120 products
-sanity.config.ts        Studio config
+├── app/
+│   ├── (store)/              # Storefront pages
+│   │   ├── products/         # Catalog and product pages
+│   │   ├── orders/           # Order history (signed-in only)
+│   │   └── checkout/success/
+│   ├── api/
+│   │   ├── chat/             # AI assistant
+│   │   ├── checkout/         # Creates Stripe Checkout Sessions
+│   │   └── webhooks/stripe/  # Records paid orders
+│   └── studio/               # Sanity Studio
+├── components/               # UI components (cart drawer, chat widget, ...)
+├── lib/                      # Catalog queries, cart store, Stripe client, AI tools
+├── sanity/                   # Sanity client, schemas and queries
+└── proxy.ts                  # Clerk middleware
+scripts/
+└── seed.ts                   # Catalog seed script
 ```
 
-## Setup
+## Deployment
 
-Requires Node.js 20.9+.
+The app is set up to deploy on Vercel.
 
-```bash
-npm install
-cp .env.example .env.local
-```
+1. Import the repository in Vercel.
+2. Add all the variables from `.env.example`, using live keys for production.
+3. Set `NEXT_PUBLIC_SITE_URL` to your production domain.
+4. In Stripe, add a webhook endpoint at `https://<your-domain>/api/webhooks/stripe` that listens for `checkout.session.completed` and `checkout.session.async_payment_succeeded`. Put its signing secret in `STRIPE_WEBHOOK_SECRET`.
+5. Add your production domain to Sanity's CORS origins and to your Clerk application.
 
-Then fill in `.env.local`:
+On Vercel, the AI Gateway authenticates automatically, so `AI_GATEWAY_API_KEY` isn't needed there.
 
-### 1. Sanity
-
-1. Create a project at [sanity.io/manage](https://www.sanity.io/manage) (or run `npx sanity init --env .env.local`).
-2. Set `NEXT_PUBLIC_SANITY_PROJECT_ID` and `NEXT_PUBLIC_SANITY_DATASET`.
-3. Under **API → Tokens**, create a token with **Editor** permissions and set `SANITY_API_WRITE_TOKEN`.
-4. Under **API → CORS origins**, add `http://localhost:3000` (with credentials) so the Studio works.
-5. Seed the catalog:
-
-   ```bash
-   npm run seed        # 120 products; re-running is safe (deterministic ids)
-   ```
-
-> Tip: make the dataset **private** in production. Orders contain customer emails; the app reads them with the server token only.
-
-### 2. Clerk
-
-Create an application at [dashboard.clerk.com](https://dashboard.clerk.com) and copy `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY`. Enable the OAuth providers you want (Google, GitHub, …) under **User & Authentication → SSO connections**.
-
-### 3. Stripe
-
-1. Copy your **test mode** secret key to `STRIPE_SECRET_KEY`.
-2. Forward webhooks locally with the [Stripe CLI](https://docs.stripe.com/stripe-cli):
-
-   ```bash
-   npm run stripe:listen
-   ```
-
-   Copy the `whsec_…` secret it prints into `STRIPE_WEBHOOK_SECRET`.
-3. Pay with test card `4242 4242 4242 4242`, any future date and any CVC.
-
-### 4. AI assistant
-
-The assistant uses the [Vercel AI Gateway](https://vercel.com/ai-gateway), so you can switch models without code changes. Set `AI_GATEWAY_API_KEY` and optionally `AI_MODEL` (default `anthropic/claude-sonnet-5.5`). On Vercel, the gateway authenticates automatically with OIDC, so the key is only needed locally.
-
-To call a provider directly instead, install e.g. `@ai-sdk/anthropic` and pass `anthropic("<model>")` as `model` in `src/app/api/chat/route.ts`.
-
-### Run
-
-```bash
-npm run dev
-```
-
-Open [http://localhost:3000](http://localhost:3000). The Studio is at [/studio](http://localhost:3000/studio).
-
-## Scripts
-
-| Script | What it does |
-| --- | --- |
-| `npm run dev` | Start the dev server |
-| `npm run build` | Production build |
-| `npm run typecheck` | Generate route types and run `tsc` |
-| `npm run lint` | ESLint |
-| `npm run seed` | Seed Sanity with categories and products (`-- --count=200` for more) |
-| `npm run stripe:listen` | Forward Stripe webhooks to localhost |
-
-## Deploying to Vercel
-
-1. Import the repo in Vercel and add every variable from `.env.example` (use live keys for production).
-2. Set `NEXT_PUBLIC_SITE_URL` to your production URL.
-3. In the Stripe dashboard, add a webhook endpoint at `https://<your-domain>/api/webhooks/stripe` for `checkout.session.completed` and `checkout.session.async_payment_succeeded`, then set `STRIPE_WEBHOOK_SECRET` to its signing secret.
-4. Add your production domain to Sanity CORS origins and to Clerk.
-
-## How the webhook stays idempotent
-
-1. The signature is verified against the raw request body.
-2. Only `checkout.session.completed` / `async_payment_succeeded` with `payment_status === "paid"` are fulfilled.
-3. The order document id is `order-<checkout session id>`. A quick lookup short-circuits retries.
-4. The order is written with `create` (fails if the id exists) **in the same transaction** as the stock `dec` patches. If two deliveries race, one transaction commits and the other fails as a whole with `409`, which is treated as "already processed" and answered with `200`.
-5. Any other error returns `500`, so Stripe retries later, which is safe for the same reason.
