@@ -12,7 +12,7 @@ A full-stack e-commerce store with an AI shopping assistant.
 - **Stripe Checkout**: the server re-reads prices and stock from Sanity (the client only sends ids and quantities) and uses an idempotency key so double-clicks don't create duplicate sessions.
 - **Idempotent webhooks**: each paid Checkout Session becomes exactly one order. The order `_id` is derived from the session id and is created in the same atomic Sanity transaction as the stock decrements, so duplicate or concurrent deliveries can never double-count (see `src/app/api/webhooks/stripe/route.ts`).
 - **Clerk auth**: sign in/up, user menu, checkout and order history require a signed-in user (checked in each route).
-- **AI shopping assistant** (Vercel AI SDK tool calling, multi-step): `searchProducts`, `getProductDetails`, `getRecommendations`, `listCategories` and `addToCart`. Results render as product cards in the chat, and `addToCart` updates the real cart. The model is aware of the current cart contents.
+- **AI shopping assistant** (Vercel AI SDK tool calling, multi-step): `searchProducts`, `getProductDetails`, `getRecommendations`, `listCategories` and `addToCart`. Results render as product cards in the chat, and `addToCart` updates the real cart. The model is aware of the current cart contents, and the assistant is only available to users signed in with Clerk (email or OAuth such as Google/GitHub).
 
 ## Project structure
 

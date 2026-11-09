@@ -6,13 +6,20 @@ import {
   toUIMessageStream,
   type UIMessage,
 } from "ai";
+import { auth } from "@clerk/nextjs/server";
 import { z } from "zod";
 import { shoppingTools } from "@/lib/ai-tools";
 
 export const maxDuration = 30;
 
 const cartSchema = z
-  .array(z.object({ name: z.string().max(200), quantity: z.number().int(), price: z.number() }))
+  .array(
+    z.object({
+      name: z.string().max(200),
+      quantity: z.number().int(),
+      price: z.number(),
+    }),
+  )
   .max(50)
   .default([]);
 
@@ -26,6 +33,14 @@ const SYSTEM = `You are StoreCraft's friendly shopping assistant.
 - Politely decline requests unrelated to shopping in this store.`;
 
 export async function POST(req: Request) {
+  // The assistant can modify the cart and costs money per call, so only signed-in users may use it.
+  const { userId } = await auth();
+  if (!userId)
+    return Response.json(
+      { error: "Please sign in to use the assistant." },
+      { status: 401 },
+    );
+
   const body = (await req.json()) as { messages: UIMessage[]; cart?: unknown };
   const messages = body.messages.slice(-30); // bound the context we send to the model
   const cart = cartSchema.safeParse(body.cart).data ?? [];
