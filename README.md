@@ -40,7 +40,7 @@ An e-commerce store with a built-in AI shopping assistant. Products are managed 
 | CMS | Sanity (embedded Studio, GROQ) |
 | Payments | Stripe Checkout and webhooks |
 | Auth | Clerk (email and OAuth) |
-| AI | Vercel AI SDK through the Vercel AI Gateway |
+| AI | Vercel AI SDK with Google Gemini (or any model through the Vercel AI Gateway) |
 | State | Zustand |
 | Validation | Zod |
 
@@ -56,7 +56,7 @@ flowchart LR
     Webhook -- order + stock update --> Sanity
     App -- chat --> Chat["/api/chat"]
     Chat -- tool calls --> Sanity
-    Chat --> Gateway[AI Gateway]
+    Chat --> Model[Gemini / AI Gateway]
 ```
 
 **Checkout.** The browser sends only product ids and quantities. The server loads current prices and stock from Sanity, then creates the Stripe Checkout Session. An idempotency key stops a double-click from creating two sessions.
@@ -70,7 +70,7 @@ flowchart LR
 ### Prerequisites
 
 - Node.js 20.9 or newer
-- Accounts on [Sanity](https://www.sanity.io), [Clerk](https://clerk.com), [Stripe](https://stripe.com) and [Vercel](https://vercel.com) (for the AI Gateway). The free tiers are enough.
+- Accounts on [Sanity](https://www.sanity.io), [Clerk](https://clerk.com), [Stripe](https://stripe.com) and [Google AI Studio](https://aistudio.google.com). The free tiers are enough.
 - The [Stripe CLI](https://docs.stripe.com/stripe-cli) for testing webhooks locally
 
 ### 1. Install
@@ -99,9 +99,12 @@ cp .env.example .env.local
 1. Copy your test-mode secret key into `STRIPE_SECRET_KEY`.
 2. In a separate terminal, run `npm run stripe:listen` and copy the `whsec_...` secret it prints into `STRIPE_WEBHOOK_SECRET`.
 
-**AI Gateway**
-1. Create an API key in the [Vercel AI Gateway](https://vercel.com/ai-gateway) and set it as `AI_GATEWAY_API_KEY`.
-2. Optional: change the model with `AI_MODEL` (default: `anthropic/claude-sonnet-5.5`).
+**AI model**
+1. Create a free key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey) and set it as `GOOGLE_GENERATIVE_AI_API_KEY`. No credit card is needed.
+2. Optional: change the model with `GOOGLE_MODEL` (default: `gemini-flash-lite-latest`).
+3. Alternative: leave the Google key empty and set `AI_GATEWAY_API_KEY` and `AI_MODEL` to use any model through the [Vercel AI Gateway](https://vercel.com/ai-gateway) instead.
+
+Run `npx tsx scripts/debug-ai.ts` to check that the model responds and can call tools.
 
 ### 3. Seed and run
 
@@ -126,8 +129,10 @@ To test a payment, use card `4242 4242 4242 4242` with any future expiry date an
 | `CLERK_SECRET_KEY` | Clerk secret key |
 | `STRIPE_SECRET_KEY` | Stripe secret key |
 | `STRIPE_WEBHOOK_SECRET` | Signing secret for the webhook endpoint |
-| `AI_GATEWAY_API_KEY` | Vercel AI Gateway key (not needed on Vercel) |
-| `AI_MODEL` | Model ID used by the assistant |
+| `GOOGLE_GENERATIVE_AI_API_KEY` | Google Gemini API key (free tier) |
+| `GOOGLE_MODEL` | Optional Gemini model ID |
+| `AI_GATEWAY_API_KEY` | Vercel AI Gateway key, used only when no Google key is set |
+| `AI_MODEL` | Gateway model ID |
 | `NEXT_PUBLIC_SITE_URL` | Base URL used for Stripe redirects |
 
 ## Scripts
@@ -174,5 +179,4 @@ The app is set up to deploy on Vercel.
 4. In Stripe, add a webhook endpoint at `https://<your-domain>/api/webhooks/stripe` that listens for `checkout.session.completed` and `checkout.session.async_payment_succeeded`. Put its signing secret in `STRIPE_WEBHOOK_SECRET`.
 5. Add your production domain to Sanity's CORS origins and to your Clerk application.
 
-On Vercel, the AI Gateway authenticates automatically, so `AI_GATEWAY_API_KEY` isn't needed there.
 

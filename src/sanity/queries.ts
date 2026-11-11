@@ -48,9 +48,8 @@ export const PRODUCT_BY_SLUG_QUERY = defineQuery(`
 `);
 
 export const RELATED_PRODUCTS_QUERY = defineQuery(`
-  *[_type == "product" && _id != $id && (
-    category->slug.current == $category || count((tags[])[@ in $tags]) > 0
-  )] | order(rating desc)[0...$limit] { ${PRODUCT_FIELDS} }
+  *[_type == "product" && _id != $id && category->slug.current == $category && stock > 0]
+    | order(rating desc)[0...$limit] { ${PRODUCT_FIELDS} }
 `);
 
 export const PRODUCTS_BY_IDS_QUERY = defineQuery(`

@@ -64,7 +64,7 @@ export async function getRelatedProducts(product: Product, limit = 4) {
   if (!isSanityConfigured) return [] as Product[];
   return client.fetch<Product[]>(
     RELATED_PRODUCTS_QUERY,
-    { id: product._id, category: product.category?.slug ?? "", tags: product.tags ?? [], limit },
+    { id: product._id, category: product.category?.slug ?? "", limit },
     fetchOpts,
   );
 }

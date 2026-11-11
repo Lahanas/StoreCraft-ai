@@ -225,7 +225,7 @@ export function ChatWidget() {
 
               {error && (
                 <p className="text-xs text-rose-600">
-                  Something went wrong. Please try again.
+                  {error.message || "Something went wrong. Please try again."}
                 </p>
               )}
               <div ref={bottomRef} />

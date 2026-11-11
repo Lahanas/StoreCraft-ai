@@ -8,6 +8,7 @@ import {
 } from "ai";
 import { auth } from "@clerk/nextjs/server";
 import { z } from "zod";
+import { getChatModel } from "@/lib/ai-model";
 import { shoppingTools } from "@/lib/ai-tools";
 
 export const maxDuration = 30;
@@ -50,15 +51,28 @@ export async function POST(req: Request) {
     : "\n\nThe user's cart is currently empty.";
 
   const result = streamText({
-    // Any Vercel AI Gateway model id; swap providers by changing AI_MODEL.
-    model: process.env.AI_MODEL ?? "anthropic/claude-sonnet-5.5",
+    model: getChatModel(),
     system: SYSTEM + cartContext,
     messages: await convertToModelMessages(messages),
     tools: shoppingTools,
     stopWhen: isStepCount(6),
+    // Fail fast instead of hanging if the model provider is overloaded.
+    abortSignal: AbortSignal.timeout(45_000),
+    onError: ({ error }) => console.error("[chat] model error:", error),
+    onStepEnd: (step) =>
+      console.log(
+        `[chat] step finished: reason=${step.finishReason} tools=${step.toolCalls.map((t) => t.toolName).join(",") || "none"} textChars=${step.text.length}`,
+      ),
   });
 
   return createUIMessageStreamResponse({
-    stream: toUIMessageStream({ stream: result.stream }),
+    stream: toUIMessageStream({
+      stream: result.stream,
+      // Surface the real error message in development; keep it generic in production.
+      onError: (error) =>
+        process.env.NODE_ENV === "development" && error instanceof Error
+          ? error.message
+          : "The assistant is unavailable right now. Please try again.",
+    }),
   });
 }
