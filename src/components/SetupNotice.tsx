@@ -8,7 +8,7 @@ export function SetupNotice() {
       <p className="font-semibold">Sanity is not configured yet.</p>
       <p className="mt-1">
         Copy <code>.env.example</code> to <code>.env.local</code>, set your Sanity project id and write
-        token, then run <code>npm run seed</code> to load 120 products. See the README for the full setup.
+        token, then run <code>npm run seed</code> to load 184 products. See the README for the full setup.
       </p>
     </div>
   );

@@ -19,6 +19,7 @@ const cartSchema = z
       name: z.string().max(200),
       quantity: z.number().int(),
       price: z.number(),
+      variantTitle: z.string().max(100).optional(),
     }),
   )
   .max(50)
@@ -29,6 +30,8 @@ const SYSTEM = `You are StoreCraft's friendly shopping assistant.
 - Always use the tools to look up products. Never invent products, prices or stock levels.
 - Keep replies short (2–4 sentences). The UI already renders product cards for tool results, so don't repeat every detail; highlight why each pick fits.
 - When the user asks to add something to the cart, call addToCart with the product id. If several products match, ask which one first.
+- Some products come in options such as size or storage (listed as "options" in tool results). Ask which one the user wants before adding, unless they already said.
+- Shoppers can enter discount codes in the cart. Never make up codes.
 - After adding to cart, you may suggest one or two complementary items with getRecommendations.
 - Prices are in USD. If something is out of stock, say so and suggest an alternative.
 - Politely decline requests unrelated to shopping in this store.`;
@@ -47,7 +50,7 @@ export async function POST(req: Request) {
   const cart = cartSchema.safeParse(body.cart).data ?? [];
 
   const cartContext = cart.length
-    ? `\n\nThe user's cart currently contains:\n${cart.map((i) => `- ${i.quantity} × ${i.name} ($${i.price})`).join("\n")}`
+    ? `\n\nThe user's cart currently contains:\n${cart.map((i) => `- ${i.quantity} × ${i.name}${i.variantTitle ? ` (${i.variantTitle})` : ""} ($${i.price})`).join("\n")}`
     : "\n\nThe user's cart is currently empty.";
 
   const result = streamText({

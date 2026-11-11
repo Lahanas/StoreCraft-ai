@@ -2,6 +2,7 @@ import "server-only";
 import { tool } from "ai";
 import { z } from "zod";
 import { getCategories, getProductBySlug, getRelatedProducts, getProductsByIdsFresh, searchProducts } from "@/lib/catalog";
+import { resolveVariant } from "@/lib/checkout";
 import { productImage } from "@/sanity/image";
 import type { Product } from "@/sanity/types";
 
@@ -10,11 +11,14 @@ export type ProductSummary = {
   id: string;
   slug: string;
   name: string;
+  brand?: string;
   price: number;
   compareAtPrice?: number;
   rating?: number;
   stock: number;
   category?: string;
+  /** e.g. "Size: S, M, L, XL". Absent for single-variant products. */
+  options?: string;
   image: string;
   url: string;
 };
@@ -23,11 +27,14 @@ const summarize = (p: Product): ProductSummary => ({
   id: p._id,
   slug: p.slug,
   name: p.name,
+  brand: p.brand,
   price: p.price,
   compareAtPrice: p.compareAtPrice,
   rating: p.rating,
   stock: p.stock,
   category: p.category?.title,
+  options:
+    p.variants.length > 1 ? `${p.optionName ?? "Option"}: ${p.variants.map((v) => v.title).join(", ")}` : undefined,
   image: productImage(p, 400),
   url: `/products/${p.slug}`,
 });
@@ -67,12 +74,19 @@ export const shoppingTools = {
   }),
 
   getProductDetails: tool({
-    description: "Get full details (description, tags, stock) for one product by its slug.",
+    description:
+      "Get full details for one product by its slug: description, tags, and each variant (e.g. size or storage) with its price and stock.",
     inputSchema: z.object({ slug: z.string() }),
     execute: async ({ slug }) => {
       const p = await getProductBySlug(slug);
       if (!p) return { error: `No product with slug "${slug}".` };
-      return { ...summarize(p), description: p.description, tags: p.tags };
+      return {
+        ...summarize(p),
+        description: p.description,
+        tags: p.tags,
+        optionName: p.optionName,
+        variants: p.variants.map((v) => ({ title: v.title, price: v.price, stock: v.stock })),
+      };
     },
   }),
 
@@ -93,18 +107,33 @@ export const shoppingTools = {
 
   addToCart: tool({
     description:
-      "Add a product to the user's cart. Only call this when the user clearly asks to add/buy something. Use the product id returned by searchProducts or getProductDetails.",
+      "Add a product to the user's cart. Only call this when the user clearly asks to add/buy something. Use the product id returned by searchProducts or getProductDetails. If the product has options (size, storage...), pass the user's choice as `variant`; if they haven't chosen, ask them first.",
     inputSchema: z.object({
       productId: z.string(),
+      variant: z
+        .string()
+        .describe("The chosen option, e.g. 'M' or '256 GB'. Omit for products without options.")
+        .optional(),
       quantity: z.number().int().min(1).max(10).default(1),
     }),
     // Validates against live stock on the server; the browser applies the returned item to
     // the cart when it sees this tool result (see ChatWidget).
-    execute: async ({ productId, quantity }) => {
+    execute: async ({ productId, variant: choice, quantity }) => {
       const [p] = await getProductsByIdsFresh([productId]);
       if (!p) return { ok: false as const, error: "Product not found." };
-      if (p.stock <= 0) return { ok: false as const, error: `${p.name} is out of stock.` };
-      return { ok: true as const, quantity: Math.min(quantity, p.stock, 10), product: summarize(p) };
+      const resolved = resolveVariant(p, choice);
+      if (!resolved.ok) return { ok: false as const, error: resolved.error, options: resolved.options };
+      const v = resolved.variant;
+      const label = p.variants.length > 1 ? v.title : undefined;
+      if (v.stock <= 0) {
+        return { ok: false as const, error: `${p.name}${label ? ` (${label})` : ""} is out of stock.` };
+      }
+      return {
+        ok: true as const,
+        quantity: Math.min(quantity, v.stock, 10),
+        product: summarize(p),
+        variant: { key: v.key, title: label, price: v.price, stock: v.stock },
+      };
     },
   }),
 };

@@ -21,6 +21,9 @@ export const order = defineType({
       type: "string",
       options: { list: ["paid", "fulfilled", "refunded"] },
     }),
+    defineField({ name: "subtotal", type: "number" }),
+    defineField({ name: "discountCode", type: "string" }),
+    defineField({ name: "discountAmount", type: "number" }),
     defineField({ name: "total", type: "number" }),
     defineField({ name: "currency", type: "string" }),
     defineField({ name: "createdAt", type: "datetime" }),
@@ -32,6 +35,8 @@ export const order = defineType({
           type: "object",
           fields: [
             defineField({ name: "productId", type: "string" }),
+            defineField({ name: "variantKey", type: "string" }),
+            defineField({ name: "variantTitle", type: "string" }),
             defineField({ name: "name", type: "string" }),
             defineField({ name: "quantity", type: "number" }),
             defineField({ name: "unitPrice", type: "number" }),

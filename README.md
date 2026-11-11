@@ -1,7 +1,8 @@
 # StoreCraft
 
-An e-commerce store with a built-in AI shopping assistant. Products are managed in Sanity, payments go through Stripe Checkout, and users sign in with Clerk. The assistant can search the catalog, recommend products and add items to your cart.
+An e-commerce store with a built-in AI shopping assistant. Products, variants and discount codes are managed in Sanity, payments go through Stripe Checkout, and users sign in with Clerk. The assistant can search the catalog, recommend products and add the right size or model to your cart.
 
+[![CI](https://github.com/Lahanas/StoreCraft-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/Lahanas/StoreCraft-ai/actions/workflows/ci.yml)
 ![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)
 ![Sanity](https://img.shields.io/badge/Sanity-CMS-F03E2F?logo=sanity&logoColor=white)
@@ -12,24 +13,36 @@ An e-commerce store with a built-in AI shopping assistant. Products are managed 
 ## Features
 
 **Storefront**
-- Product catalog with search, category filters, sorting and pagination
-- Product pages with stock status and related products
+- 184 products across 9 categories, with real product photos, brands and customer reviews
+- Search, category filters, sorting and pagination
+- Product pages with an image gallery, variant picker and stock for each variant
 - Cart drawer that keeps its contents after a reload and stays in sync across open tabs
 - Order history for signed-in users
 
-**Payments**
-- Stripe Checkout, with prices and stock checked on the server before a session is created
-- A webhook that records each paid order exactly once, even if Stripe sends the event more than once
+**Variants and inventory**
+- Products can have options such as size, storage or memory, and each variant has its own SKU, price and stock
+- Sold-out variants stay visible but can't be added
+- Stock is tracked per variant and decremented when an order is paid
 
-**Content**
-- Sanity Studio built into the app at `/studio`
-- A seed script that loads 120 products across 8 categories
+**Discount codes**
+- Codes are created and managed in Sanity Studio: percentage or fixed amount, minimum spend, start and end dates, usage limit
+- The cart shows the discount and new total as soon as a code is applied
+- The server checks the code again at checkout and passes the exact amount to Stripe
+
+**Payments**
+- Stripe Checkout, with prices, stock and discounts checked on the server before a session is created
+- A webhook that records each paid order exactly once, even if Stripe sends the event more than once
 
 **AI assistant**
 - Built with the Vercel AI SDK using tool calling
 - Tools: search products, get product details, recommend similar items, list categories, add to cart
+- Asks which size or model you want before adding a product that has options
 - Results appear as product cards in the chat, and "add to cart" updates the real cart
 - Available to signed-in users only
+
+**Quality**
+- 38 unit tests with Vitest covering pricing, discounts, checkout validation, webhook idempotency, the cart and the GROQ queries
+- GitHub Actions runs lint, typecheck, tests and a production build on every push
 
 ## Tech stack
 
@@ -37,19 +50,20 @@ An e-commerce store with a built-in AI shopping assistant. Products are managed 
 | --- | --- |
 | Framework | Next.js 16 (App Router), React 19, TypeScript |
 | Styling | Tailwind CSS v4 |
-| CMS | Sanity (embedded Studio, GROQ) |
+| CMS | Sanity (embedded Studio, GROQ, image CDN) |
 | Payments | Stripe Checkout and webhooks |
 | Auth | Clerk (email and OAuth) |
 | AI | Vercel AI SDK with Google Gemini (or any model through the Vercel AI Gateway) |
 | State | Zustand |
 | Validation | Zod |
+| Testing | Vitest, groq-js, GitHub Actions |
 
 ## How it works
 
 ```mermaid
 flowchart LR
     User((User)) --> App[Next.js app]
-    App -- products --> Sanity[(Sanity)]
+    App -- products, discounts --> Sanity[(Sanity)]
     App -- sign in --> Clerk
     App -- checkout session --> Stripe
     Stripe -- webhook --> Webhook["/api/webhooks/stripe"]
@@ -59,9 +73,11 @@ flowchart LR
     Chat --> Model[Gemini / AI Gateway]
 ```
 
-**Checkout.** The browser sends only product ids and quantities. The server loads current prices and stock from Sanity, then creates the Stripe Checkout Session. An idempotency key stops a double-click from creating two sessions.
+**Variants.** Every product has at least one variant, the same way Shopify models products. A cart line is a product plus a variant key, and stock lives on the variant. Products without options have a single "Default" variant, so the cart, checkout and webhook only deal with one shape.
 
-**Webhooks.** Stripe can deliver the same event more than once. Each paid session maps to one order whose id is built from the session id (`order-<session id>`). The order and the stock decrements are written in a single Sanity transaction that fails if the order already exists. A repeated event therefore changes nothing, and the webhook still answers `200` so Stripe stops retrying.
+**Checkout.** The browser sends only product ids, variant keys, quantities and an optional discount code. The server loads current prices and stock from Sanity, checks the discount rules in `src/lib/pricing.ts`, then creates the Stripe Checkout Session. The discount is passed to Stripe as a one-off coupon for the exact amount, so Stripe's total always matches the store's. An idempotency key stops a double-click from creating two sessions.
+
+**Webhooks.** Stripe can deliver the same event more than once, sometimes at the same time. Each paid session maps to one order whose id is built from the session id (`order-<session id>`). The order, the stock decrements and the discount usage count are written in a single Sanity transaction that fails if the order already exists. A repeated event therefore changes nothing, and the webhook still answers `200` so Stripe stops retrying. The tests in `src/lib/fulfillment.test.ts` cover repeated and concurrent deliveries.
 
 **Assistant.** `/api/chat` streams a response from the model with five tools defined in `src/lib/ai-tools.ts`. Every tool reads from Sanity, so the assistant can't invent products or prices. The current cart is sent with each message so the assistant knows what you already have.
 
@@ -109,13 +125,21 @@ Run `npx tsx scripts/debug-ai.ts` to check that the model responds and can call 
 ### 3. Seed and run
 
 ```bash
-npm run seed   # loads 120 products (safe to run again)
+npm run seed   # loads products, photos and discount codes (safe to run again)
 npm run dev
 ```
 
+The first seed uploads about 420 product photos to Sanity and takes a few minutes. Later runs skip photos that are already uploaded.
+
 Open [localhost:3000](http://localhost:3000). The Studio is at [localhost:3000/studio](http://localhost:3000/studio).
 
-To test a payment, use card `4242 4242 4242 4242` with any future expiry date and any CVC.
+To test a payment, use card `4242 4242 4242 4242` with any future expiry date and any CVC. These discount codes are seeded:
+
+| Code | Discount |
+| --- | --- |
+| `WELCOME10` | 10% off |
+| `SAVE25` | $25 off orders over $150 |
+| `SUMMER20` | Expired, to show the error message |
 
 ## Environment variables
 
@@ -144,7 +168,8 @@ To test a payment, use card `4242 4242 4242 4242` with any future expiry date an
 | `npm run start` | Run the production build |
 | `npm run lint` | Run ESLint |
 | `npm run typecheck` | Generate route types and run the TypeScript compiler |
-| `npm run seed` | Seed Sanity with products (`-- --count=200` for more) |
+| `npm test` | Run the unit tests |
+| `npm run seed` | Seed Sanity with products, photos and discount codes |
 | `npm run stripe:listen` | Forward Stripe webhooks to your local server |
 
 ## Project structure
@@ -159,14 +184,21 @@ src/
 │   ├── api/
 │   │   ├── chat/             # AI assistant
 │   │   ├── checkout/         # Creates Stripe Checkout Sessions
+│   │   ├── discounts/        # Checks a discount code for the cart
 │   │   └── webhooks/stripe/  # Records paid orders
 │   └── studio/               # Sanity Studio
-├── components/               # UI components (cart drawer, chat widget, ...)
-├── lib/                      # Catalog queries, cart store, Stripe client, AI tools
+├── components/               # UI components (cart drawer, variant picker, chat widget, ...)
+├── lib/
+│   ├── pricing.ts            # Subtotals and discount rules
+│   ├── checkout.ts           # Cart validation against live stock
+│   ├── fulfillment.ts        # Idempotent order creation
+│   ├── ai-tools.ts           # Assistant tools
+│   └── ...                   # Catalog queries, cart store, Stripe client
 ├── sanity/                   # Sanity client, schemas and queries
 └── proxy.ts                  # Clerk middleware
 scripts/
-└── seed.ts                   # Catalog seed script
+├── seed.ts                   # Catalog seed script
+└── data/products.json        # Product data
 ```
 
 ## Deployment
@@ -179,4 +211,6 @@ The app is set up to deploy on Vercel.
 4. In Stripe, add a webhook endpoint at `https://<your-domain>/api/webhooks/stripe` that listens for `checkout.session.completed` and `checkout.session.async_payment_succeeded`. Put its signing secret in `STRIPE_WEBHOOK_SECRET`.
 5. Add your production domain to Sanity's CORS origins and to your Clerk application.
 
+## Credits
 
+Product data and photos come from [DummyJSON](https://github.com/Ovi/DummyJSON) (MIT license).

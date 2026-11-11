@@ -1,8 +1,10 @@
 import "server-only";
 import { client } from "@/sanity/client";
 import { isSanityConfigured } from "@/sanity/env";
+import type { DiscountRule } from "@/lib/pricing";
 import {
   CATEGORIES_QUERY,
+  DISCOUNT_BY_CODE_QUERY,
   FEATURED_PRODUCTS_QUERY,
   PRODUCT_BY_SLUG_QUERY,
   PRODUCTS_BY_IDS_QUERY,
@@ -74,4 +76,12 @@ export async function getProductsByIdsFresh(ids: string[]) {
   return client
     .withConfig({ useCdn: false })
     .fetch<Product[]>(PRODUCTS_BY_IDS_QUERY, { ids }, { cache: "no-store" });
+}
+
+/** Uncached discount lookup by normalised code. */
+export async function getDiscountFresh(code: string) {
+  if (!isSanityConfigured) return null;
+  return client
+    .withConfig({ useCdn: false })
+    .fetch<DiscountRule | null>(DISCOUNT_BY_CODE_QUERY, { code }, { cache: "no-store" });
 }

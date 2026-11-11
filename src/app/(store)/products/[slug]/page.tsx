@@ -1,12 +1,11 @@
 import type { Metadata } from "next";
-import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { AddToCartButton } from "@/components/AddToCartButton";
+import { ProductPurchase } from "@/components/ProductPurchase";
 import { ProductCard } from "@/components/ProductCard";
+import { ProductGallery } from "@/components/ProductGallery";
 import { getProductBySlug, getRelatedProducts } from "@/lib/catalog";
-import { formatPrice } from "@/lib/money";
-import { productImage } from "@/sanity/image";
+import { imageUrl, productImage } from "@/sanity/image";
 
 export const revalidate = 60;
 
@@ -19,40 +18,53 @@ export default async function ProductPage({ params }: PageProps<"/products/[slug
   const product = await getProductBySlug((await params).slug);
   if (!product) notFound();
   const related = await getRelatedProducts(product);
-  const image = productImage(product, 1000);
+
+  const gallery = (product.images?.length ? product.images : [product.image]).map((img) => ({
+    large: imageUrl(img, 1000),
+    thumb: imageUrl(img, 160),
+  }));
+  const reviews = product.reviews ?? [];
 
   return (
     <div className="space-y-16">
       <div className="grid gap-10 md:grid-cols-2">
-        <div className="relative aspect-square overflow-hidden rounded-3xl bg-zinc-100 dark:bg-zinc-800">
-          <Image src={image} alt={product.name} fill priority sizes="(min-width: 768px) 50vw, 100vw" className="object-cover" />
-        </div>
+        <ProductGallery images={gallery} alt={product.name} />
         <div className="flex flex-col gap-5">
-          {product.category && (
-            <Link href={`/products?category=${product.category.slug}`} className="text-sm uppercase tracking-wide text-indigo-600">
-              {product.category.title}
-            </Link>
-          )}
-          <h1 className="text-3xl font-bold tracking-tight">{product.name}</h1>
-          <div className="flex items-baseline gap-3">
-            <span className="text-2xl font-semibold">{formatPrice(product.price)}</span>
-            {product.compareAtPrice && product.compareAtPrice > product.price && (
-              <span className="text-lg text-zinc-400 line-through">{formatPrice(product.compareAtPrice)}</span>
+          <div className="flex flex-wrap items-center gap-2 text-sm uppercase tracking-wide">
+            {product.category && (
+              <Link href={`/products?category=${product.category.slug}`} className="text-indigo-600">
+                {product.category.title}
+              </Link>
             )}
+            {product.brand && <span className="text-zinc-500">· {product.brand}</span>}
           </div>
-          {product.rating != null && <p className="text-sm text-zinc-500">★ {product.rating.toFixed(1)} / 5</p>}
+          <h1 className="text-3xl font-bold tracking-tight">{product.name}</h1>
+          {product.rating != null && (
+            <p className="text-sm text-zinc-500">
+              ★ {product.rating.toFixed(1)} / 5
+              {reviews.length > 0 && <> · {reviews.length} reviews</>}
+            </p>
+          )}
           <p className="leading-relaxed text-zinc-600 dark:text-zinc-300">{product.description}</p>
-          <p className={`text-sm ${product.stock > 5 ? "text-emerald-600" : "text-amber-600"}`}>
-            {product.stock <= 0 ? "Out of stock" : product.stock <= 5 ? `Only ${product.stock} left` : "In stock"}
-          </p>
-          <AddToCartButton
-            product={{ _id: product._id, slug: product.slug, name: product.name, price: product.price, stock: product.stock, image: productImage(product, 400) }}
-            className="self-start"
+          <ProductPurchase
+            product={{
+              _id: product._id,
+              slug: product.slug,
+              name: product.name,
+              image: productImage(product, 400),
+              compareAtPrice: product.compareAtPrice,
+              optionName: product.optionName,
+              variants: product.variants,
+            }}
           />
           {product.tags && product.tags.length > 0 && (
             <div className="flex flex-wrap gap-2 pt-2">
               {product.tags.map((t) => (
-                <Link key={t} href={`/products?q=${encodeURIComponent(t)}`} className="rounded-full bg-zinc-100 px-3 py-1 text-xs dark:bg-zinc-800">
+                <Link
+                  key={t}
+                  href={`/products?q=${encodeURIComponent(t)}`}
+                  className="rounded-full bg-zinc-100 px-3 py-1 text-xs dark:bg-zinc-800"
+                >
                   {t}
                 </Link>
               ))}
@@ -60,6 +72,26 @@ export default async function ProductPage({ params }: PageProps<"/products/[slug
           )}
         </div>
       </div>
+
+      {reviews.length > 0 && (
+        <section>
+          <h2 className="mb-6 text-2xl font-semibold">Reviews</h2>
+          <ul className="grid gap-4 sm:grid-cols-3">
+            {reviews.map((r) => (
+              <li key={r._key} className="rounded-2xl border border-zinc-200 p-5 dark:border-zinc-800">
+                <p className="text-amber-500" aria-label={`${r.rating} out of 5`}>
+                  {"★".repeat(r.rating)}
+                  <span className="text-zinc-300 dark:text-zinc-700">{"★".repeat(5 - r.rating)}</span>
+                </p>
+                <p className="mt-2">{r.comment}</p>
+                <p className="mt-3 text-xs text-zinc-500">
+                  {r.reviewerName} · {new Date(r.date).toLocaleDateString("en-US", { dateStyle: "medium" })}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {related.length > 0 && (
         <section>

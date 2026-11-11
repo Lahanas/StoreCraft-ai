@@ -1,17 +1,12 @@
 import { NextResponse } from "next/server";
 import type Stripe from "stripe";
+import { fulfillOrder, type PaidLineItem, type PaidSession } from "@/lib/fulfillment";
+import { sanityOrderStore } from "@/lib/order-store";
 import { getStripe } from "@/lib/stripe";
-import { writeClient } from "@/sanity/write-client";
 
 /**
- * Stripe webhook.
- *
- * Idempotency: Stripe delivers events at least once, and may retry or send
- * `checkout.session.completed` and `checkout.session.async_payment_succeeded` for the same
- * session. Each paid session maps to exactly one order document whose _id is derived from the
- * session id. The order is written with `create` (which fails if the id exists) in the same
- * atomic Sanity transaction as the stock decrements, so a duplicate delivery fails as a whole
- * with 409 and nothing is applied twice. We then acknowledge it with 200.
+ * Stripe webhook. Verifies the signature, then records each paid Checkout Session as exactly
+ * one order. See src/lib/fulfillment.ts for how repeated deliveries are made harmless.
  */
 export async function POST(req: Request) {
   const signature = req.headers.get("stripe-signature");
@@ -36,7 +31,12 @@ export async function POST(req: Request) {
       case "checkout.session.async_payment_succeeded": {
         const session = event.data.object;
         if (session.payment_status === "paid") {
-          const result = await fulfillOrder(stripe, session, event.id);
+          const result = await fulfillOrder(
+            sanityOrderStore,
+            toPaidSession(session),
+            () => loadLineItems(stripe, session.id),
+            event.id,
+          );
           return NextResponse.json({ received: true, result });
         }
         break;
@@ -53,61 +53,37 @@ export async function POST(req: Request) {
   }
 }
 
-async function fulfillOrder(stripe: Stripe, session: Stripe.Checkout.Session, eventId: string) {
-  const orderId = `order-${session.id}`;
+function toPaidSession(session: Stripe.Checkout.Session): PaidSession {
+  return {
+    id: session.id,
+    paymentIntentId:
+      typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id,
+    clerkUserId: session.metadata?.clerkUserId ?? session.client_reference_id ?? "",
+    email: session.customer_details?.email ?? session.customer_email ?? "",
+    amountSubtotal: session.amount_subtotal ?? 0,
+    amountDiscount: session.total_details?.amount_discount ?? 0,
+    amountTotal: session.amount_total ?? 0,
+    currency: session.currency ?? "usd",
+    created: session.created,
+    discountCode: session.metadata?.discountCode || undefined,
+  };
+}
 
-  // Cheap early exit for the common retry case (the transaction below is the real guard).
-  const existing = await writeClient.fetch<string | null>(`*[_id == $id][0]._id`, { id: orderId });
-  if (existing) return "duplicate";
-
-  const lineItems = await stripe.checkout.sessions.listLineItems(session.id, {
+async function loadLineItems(stripe: Stripe, sessionId: string): Promise<PaidLineItem[]> {
+  const lineItems = await stripe.checkout.sessions.listLineItems(sessionId, {
     limit: 100,
     expand: ["data.price.product"],
   });
-
-  const items = lineItems.data.map((li, i) => {
+  return lineItems.data.map((li) => {
     const product = li.price?.product as Stripe.Product | undefined;
+    const meta = product?.metadata ?? {};
     return {
-      _key: `item-${i}`,
-      productId: product?.metadata?.productId ?? "",
-      name: li.description ?? product?.name ?? "Item",
+      productId: meta.productId ?? "",
+      variantKey: meta.variantKey ?? "",
+      variantTitle: meta.variantTitle || undefined,
+      name: meta.name || product?.name || li.description || "Item",
       quantity: li.quantity ?? 1,
-      unitPrice: (li.price?.unit_amount ?? 0) / 100,
+      unitAmount: li.price?.unit_amount ?? 0,
     };
   });
-
-  const tx = writeClient.transaction().create({
-    _id: orderId,
-    _type: "order",
-    orderNumber: session.id.slice(-10).toUpperCase(),
-    stripeCheckoutSessionId: session.id,
-    stripePaymentIntentId:
-      typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id,
-    stripeEventId: eventId,
-    clerkUserId: session.metadata?.clerkUserId ?? session.client_reference_id ?? "",
-    email: session.customer_details?.email ?? session.customer_email ?? "",
-    status: "paid",
-    total: (session.amount_total ?? 0) / 100,
-    currency: (session.currency ?? "usd").toUpperCase(),
-    createdAt: new Date((session.created ?? Date.now() / 1000) * 1000).toISOString(),
-    items,
-  });
-
-  for (const item of items) {
-    if (item.productId) {
-      tx.patch(item.productId, (p) => p.setIfMissing({ stock: 0 }).dec({ stock: item.quantity }));
-    }
-  }
-
-  try {
-    await tx.commit();
-    return "created";
-  } catch (err) {
-    if (isConflict(err)) return "duplicate"; // a concurrent delivery won the race
-    throw err;
-  }
-}
-
-function isConflict(err: unknown) {
-  return typeof err === "object" && err !== null && "statusCode" in err && err.statusCode === 409;
 }

@@ -1,13 +1,17 @@
 import { createImageUrlBuilder } from "@sanity/image-url";
 import { dataset, projectId } from "./env";
-import type { Product } from "./types";
+import type { SanityImage } from "./types";
 
 const builder = createImageUrlBuilder({ projectId, dataset });
 
-/** Prefer an uploaded Sanity image; fall back to the seeded external URL. */
-export function productImage(product: Pick<Product, "image" | "imageUrl">, width = 800) {
-  if (product.image?.asset?._ref) {
-    return builder.image(product.image).width(width).height(width).fit("crop").auto("format").url();
-  }
-  return product.imageUrl ?? `https://picsum.photos/seed/storecraft/${width}/${width}`;
+export const PLACEHOLDER_IMAGE = "/placeholder.svg";
+
+/** Square, auto-format URL from the Sanity image CDN, or a placeholder when there is no image. */
+export function imageUrl(image: SanityImage | undefined, width = 800) {
+  if (!image?.asset?._ref) return PLACEHOLDER_IMAGE;
+  return builder.image(image).width(width).height(width).fit("crop").auto("format").url();
+}
+
+export function productImage(product: { image?: SanityImage }, width = 800) {
+  return imageUrl(product.image, width);
 }

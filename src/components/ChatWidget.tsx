@@ -56,11 +56,13 @@ export function ChatWidget() {
           addItem(
             {
               productId: p.id,
+              variantKey: out.variant.key,
+              variantTitle: out.variant.title,
               slug: p.slug,
               name: p.name,
-              price: p.price,
+              price: out.variant.price,
               image: p.image,
-              stock: p.stock,
+              stock: out.variant.stock,
             },
             out.quantity,
           );
@@ -80,6 +82,7 @@ export function ChatWidget() {
       .getState()
       .items.map((i) => ({
         name: i.name,
+        variantTitle: i.variantTitle,
         quantity: i.quantity,
         price: i.price,
       }));
@@ -209,10 +212,11 @@ export function ChatWidget() {
                           onClick={openCart}
                           className="w-full rounded-xl bg-emerald-50 px-3 py-2 text-left text-xs text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200"
                         >
-                          ✓ Added {out.quantity} × {out.product.name} to your
-                          cart. View cart →
+                          ✓ Added {out.quantity} × {out.product.name}
+                          {out.variant.title && ` (${out.variant.title})`} to
+                          your cart. View cart →
                         </button>
-                      ) : (
+                      ) : out.options ? null : (
                         <p key={i} className="text-xs text-rose-600">
                           {out.error}
                         </p>

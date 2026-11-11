@@ -30,10 +30,13 @@ export function ProductCard({ product }: { product: Product }) {
         )}
       </div>
       <div className="flex flex-1 flex-col gap-1 p-4">
-        <p className="text-xs uppercase tracking-wide text-zinc-500">{product.category?.title}</p>
+        <p className="text-xs uppercase tracking-wide text-zinc-500">{product.brand ?? product.category?.title}</p>
         <h3 className="line-clamp-2 font-medium">{product.name}</h3>
         <div className="mt-auto flex items-baseline gap-2 pt-2">
-          <span className="font-semibold">{formatPrice(product.price)}</span>
+          <span className="font-semibold">
+            {hasPriceRange(product) && <span className="font-normal text-zinc-500">From </span>}
+            {formatPrice(product.price)}
+          </span>
           {product.compareAtPrice && product.compareAtPrice > product.price && (
             <span className="text-sm text-zinc-400 line-through">{formatPrice(product.compareAtPrice)}</span>
           )}
@@ -45,3 +48,5 @@ export function ProductCard({ product }: { product: Product }) {
     </Link>
   );
 }
+
+const hasPriceRange = (p: Product) => new Set(p.variants.map((v) => v.price)).size > 1;

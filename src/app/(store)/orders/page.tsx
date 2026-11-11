@@ -43,10 +43,17 @@ export default async function OrdersPage() {
                 <li key={i._key} className="flex justify-between">
                   <span>
                     {i.quantity} × {i.name}
+                    {i.variantTitle && <span className="text-zinc-400"> ({i.variantTitle})</span>}
                   </span>
                   <span>{formatPrice(i.unitPrice * i.quantity, o.currency)}</span>
                 </li>
               ))}
+              {o.discountCode && o.discountAmount ? (
+                <li className="flex justify-between text-emerald-700 dark:text-emerald-400">
+                  <span>Discount ({o.discountCode})</span>
+                  <span>−{formatPrice(o.discountAmount, o.currency)}</span>
+                </li>
+              ) : null}
             </ul>
           </div>
         ))
