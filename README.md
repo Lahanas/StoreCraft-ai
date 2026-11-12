@@ -2,6 +2,8 @@
 
 An e-commerce store with a built-in AI shopping assistant. Products, variants and discount codes are managed in Sanity, payments go through Stripe Checkout, and users sign in with Clerk. The assistant can search the catalog, recommend products and add the right size or model to your cart.
 
+**Live demo:** [store-craft-ai.vercel.app](https://store-craft-ai.vercel.app) (Stripe test mode, pay with card `4242 4242 4242 4242`, try code `WELCOME10`)
+
 [![CI](https://github.com/Lahanas/StoreCraft-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/Lahanas/StoreCraft-ai/actions/workflows/ci.yml)
 ![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)
